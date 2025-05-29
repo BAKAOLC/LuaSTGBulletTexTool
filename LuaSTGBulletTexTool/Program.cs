@@ -12,7 +12,12 @@ var startTime = DateTime.Now;
 
 if (args.Length < 3)
 {
-    Console.WriteLine("Usage: <json> <width> <height> [margin]");
+    Console.WriteLine("Usage: <json> <width> <height> [margin] [algorithm]");
+    Console.WriteLine("Available algorithms:");
+    Console.WriteLine("  none     - Do not process transparent pixels");
+    Console.WriteLine("  nearest  - Use nearest non-transparent pixel color");
+    Console.WriteLine("  weighted - Use weighted average of surrounding pixels");
+    Console.WriteLine("  gaussian - Use Gaussian weighted average (default)");
     return;
 }
 
@@ -45,6 +50,19 @@ if (args.Length > 3 && int.TryParse(args[3], out var marginValue))
     }
 
     margin = marginValue;
+}
+
+var algorithm = AlphaColorFixAlgorithm.Gaussian;
+if (args.Length > 4)
+{
+    algorithm = args[4].ToLower() switch
+    {
+        "none" => AlphaColorFixAlgorithm.None,
+        "nearest" => AlphaColorFixAlgorithm.Nearest,
+        "weighted" => AlphaColorFixAlgorithm.Weighted,
+        "gaussian" => AlphaColorFixAlgorithm.Gaussian,
+        _ => AlphaColorFixAlgorithm.Gaussian
+    };
 }
 
 Console.WriteLine($"Loading bullet data from: {jsonFilePath}");
@@ -98,19 +116,19 @@ Console.WriteLine($"Saved {textureSpritePool.Count} sprite pools to {outputDirec
 Console.WriteLine("Combining sprites...");
 var combinedSpritePool = new SpritePool();
 foreach (var (_, spritePool) in textureSpritePool)
-foreach (var (spriteName, sprite) in spritePool)
-    combinedSpritePool.Add(spriteName, sprite);
+    foreach (var (spriteName, sprite) in spritePool)
+        combinedSpritePool.Add(spriteName, sprite);
 var combinedSameSpritePool = new Dictionary<string, string[]>();
 foreach (var (_, sameSprites) in sameSpritePool)
-foreach (var (mainSpriteName, sameSpriteNames) in sameSprites)
-    combinedSameSpritePool[mainSpriteName] = sameSpriteNames;
+    foreach (var (mainSpriteName, sameSpriteNames) in sameSprites)
+        combinedSameSpritePool[mainSpriteName] = sameSpriteNames;
 var spriteDataMap = MapSpriteData(bulletData.Sprites, sameSpritePool);
 var cropRangePool = textureSpriteCropRangePool.SelectMany(x => x.Value)
     .ToDictionary(x => x.Key, x => x.Value);
 var (combinedSprite, colorMapSprite, spriteDataList) =
     await CombineSprites("bullet_atlas", width, height,
             combinedSpritePool, spriteDataMap, combinedSameSpritePool, cropRangePool,
-            margin)
+            margin, algorithm)
         .ConfigureAwait(false);
 
 var newTextureData = new TextureData("bullet_atlas", "bullet_atlas.png", false);
@@ -142,12 +160,14 @@ static async Task<(Sprite, Sprite, List<SpriteData>)> CombineSprites(string name
     Dictionary<string, SpriteData> spriteDataMap,
     Dictionary<string, string[]> sameSpritePool,
     Dictionary<string, CropRange> cropRangePool,
-    int margin = 4)
+    int margin = 4,
+    AlphaColorFixAlgorithm algorithm = AlphaColorFixAlgorithm.Gaussian)
 {
     Console.WriteLine($"Combining {spritePool.Count} sprites into {name}");
     Console.WriteLine($"Create texture with size: {width}x{height}");
     var resultSprite = new Sprite(width, height);
     var resultSpriteData = new List<SpriteData>();
+    var spriteRegions = new List<Rectangle>();
 
     Console.WriteLine("Start to generate combined sprite");
     var x = 0;
@@ -172,6 +192,10 @@ static async Task<(Sprite, Sprite, List<SpriteData>)> CombineSprites(string name
         }
 
         var point = new Point(x + margin, y + margin);
+        var spriteRegion = new Rectangle(point.X - margin, point.Y - margin,
+            sprite.Width + margin * 2, sprite.Height + margin * 2);
+        spriteRegions.Add(spriteRegion);
+
         var originalSpriteData = spriteDataMap[spriteName];
         var rectData = new RectData(point.X, point.Y, sprite.Width, sprite.Height);
         var sameSpriteNames = sameSpritePool.GetValueOrDefault(spriteName, []);
@@ -194,8 +218,8 @@ static async Task<(Sprite, Sprite, List<SpriteData>)> CombineSprites(string name
     tasks.Clear();
 
     Console.WriteLine("Generated combined texture");
-    Console.WriteLine("Start to fix alpha color");
-    var (finalResultSprite, colorMapSprite) = FixAlphaColor(resultSprite);
+    Console.WriteLine($"Start to fix alpha color using {algorithm} algorithm");
+    var (finalResultSprite, colorMapSprite) = AlphaColorFixer.FixAlphaColor(resultSprite, spriteRegions, algorithm);
     Console.WriteLine("Completed");
 
     return (finalResultSprite, colorMapSprite, resultSpriteData);
@@ -223,46 +247,6 @@ static Dictionary<string, SpriteData> MapSpriteData(List<SpriteData> spriteDataL
     return spriteDataMap;
 }
 
-static (Sprite, Sprite) FixAlphaColor(Sprite sprite)
-{
-    var width = sprite.Width;
-    var height = sprite.Height;
-    if (width == 0 || height == 0) return (sprite, sprite);
-
-    var processed = new bool[width, height];
-    var waiting = width * height;
-    var colorMap = new Sprite(width, height);
-    var tier = 0;
-    while (waiting > 0)
-    {
-        Console.WriteLine($"Processing tier {tier++}, remaining: {waiting}");
-        for (var y = 0; y < height; y++)
-        for (var x = 0; x < width; x++)
-        {
-            if (processed[x, y]) continue;
-
-            var pixel = sprite[x, y];
-            if (pixel.A > 0)
-            {
-                processed[x, y] = true;
-                colorMap[x, y] = new(pixel.R, pixel.G, pixel.B, 255);
-                waiting--;
-                continue;
-            }
-
-            var count = ImageExtension.GetNotTransparentNeighborsPixelColor(sprite, x, y, processed, out var colors);
-            if (count <= 0) continue;
-            var color = colors[0];
-            sprite[x, y] = new(color.R, color.G, color.B, pixel.A);
-            colorMap[x, y] = new(color.R, color.G, color.B, 255);
-            processed[x, y] = true;
-            waiting--;
-        }
-    }
-
-    return (sprite, colorMap);
-}
-
 static CropRange CropEmptyPixels(Sprite sprite)
 {
     var minX = sprite.Width;
@@ -270,15 +254,15 @@ static CropRange CropEmptyPixels(Sprite sprite)
     var maxX = 0;
     var maxY = 0;
     for (var y = 0; y < sprite.Height; y++)
-    for (var x = 0; x < sprite.Width; x++)
-    {
-        var pixel = sprite[x, y];
-        if (pixel.A <= 0) continue;
-        minX = Math.Min(minX, x);
-        minY = Math.Min(minY, y);
-        maxX = Math.Max(maxX, x);
-        maxY = Math.Max(maxY, y);
-    }
+        for (var x = 0; x < sprite.Width; x++)
+        {
+            var pixel = sprite[x, y];
+            if (pixel.A <= 0) continue;
+            minX = Math.Min(minX, x);
+            minY = Math.Min(minY, y);
+            maxX = Math.Max(maxX, x);
+            maxY = Math.Max(maxY, y);
+        }
 
     if (minX >= maxX || minY >= maxY ||
         (minX == 0 && minY == 0 && maxX == sprite.Width - 1 && maxY == sprite.Height - 1)) return new(0, 0, 0, 0);
@@ -437,30 +421,87 @@ internal static class ImageExtension
         (1, 1), (-1, 1), (-1, -1), (1, -1),
     ];
 
+    private static readonly (int, int)[] ExtendedOffsetList =
+    [
+        (1, 0), (0, 1), (-1, 0), (0, -1),
+        (1, 1), (-1, 1), (-1, -1), (1, -1),
+        (2, 0), (0, 2), (-2, 0), (0, -2),
+        (2, 1), (1, 2), (-1, 2), (-2, 1),
+        (-2, -1), (-1, -2), (1, -2), (2, -1),
+    ];
+
+    private static float CalculateWeight(float distance)
+    {
+        const float sigma = 2.0f;
+        return (float)Math.Exp(-(distance * distance) / (2 * sigma * sigma));
+    }
+
+    internal static Rgba32 CalculateWeightedColor(Sprite sprite, int x, int y, bool[,] processed, List<Rectangle> spriteRegions)
+    {
+        var currentRegion = spriteRegions.FirstOrDefault(r =>
+            x >= r.X && x < r.X + r.Width && y >= r.Y && y < r.Y + r.Height);
+
+        if (currentRegion == default) return new Rgba32();
+
+        var totalWeight = 0f;
+        var weightedR = 0f;
+        var weightedG = 0f;
+        var weightedB = 0f;
+
+        foreach (var (ox, oy) in ExtendedOffsetList)
+        {
+            var nx = x + ox;
+            var ny = y + oy;
+
+            if (nx < currentRegion.X || nx >= currentRegion.X + currentRegion.Width ||
+                ny < currentRegion.Y || ny >= currentRegion.Y + currentRegion.Height)
+                continue;
+
+            var pixel = sprite[nx, ny];
+            if (!processed[nx, ny] && pixel.A == 0) continue;
+
+            var distance = (float)Math.Sqrt(ox * ox + oy * oy);
+            var weight = CalculateWeight(distance);
+            totalWeight += weight;
+
+            weightedR += pixel.R * weight;
+            weightedG += pixel.G * weight;
+            weightedB += pixel.B * weight;
+        }
+
+        if (totalWeight <= 0) return new Rgba32();
+
+        return new Rgba32(
+            (byte)(weightedR / totalWeight),
+            (byte)(weightedG / totalWeight),
+            (byte)(weightedB / totalWeight),
+            0
+        );
+    }
+
     internal static int GetNotTransparentNeighborsPixelColor(Sprite sprite, int x, int y, bool[,] processed,
-        out Rgba32[] result)
+        out Rgba32[] result, List<Rectangle> spriteRegions)
     {
         result = new Rgba32[8];
         var count = 0;
         if (x < 0 || x >= sprite.Width || y < 0 || y >= sprite.Height) return 0;
+
+        var currentRegion = spriteRegions.FirstOrDefault(r =>
+            x >= r.X && x < r.X + r.Width && y >= r.Y && y < r.Y + r.Height);
+
+        if (currentRegion == default) return 0;
+
         foreach (var (ox, oy) in OffsetList)
         {
-            switch (ox)
-            {
-                case -1 when x == 0:
-                case 1 when x == sprite.Width - 1:
-                    continue;
-            }
+            var nx = x + ox;
+            var ny = y + oy;
 
-            switch (oy)
-            {
-                case -1 when y == 0:
-                case 1 when y == sprite.Height - 1:
-                    continue;
-            }
+            if (nx < currentRegion.X || nx >= currentRegion.X + currentRegion.Width ||
+                ny < currentRegion.Y || ny >= currentRegion.Y + currentRegion.Height)
+                continue;
 
-            var pixel = sprite[x + ox, y + oy];
-            if (!processed[x + ox, y + oy] && pixel.A == 0) continue;
+            var pixel = sprite[nx, ny];
+            if (!processed[nx, ny] && pixel.A == 0) continue;
             result[count] = pixel;
             count++;
         }
