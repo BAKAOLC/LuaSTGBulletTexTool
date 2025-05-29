@@ -3,14 +3,14 @@ using SixLabors.ImageSharp.PixelFormats;
 
 namespace TexCombineTool
 {
-    using Sprite = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
+    using Sprite = Image<Rgba32>;
 
     public enum AlphaColorFixAlgorithm
     {
-        None,       // 不处理透明像素
-        Nearest,    // 使用最近的非透明像素颜色
-        Weighted,   // 使用加权平均
-        Gaussian    // 使用高斯加权
+        None, // 不处理透明像素
+        Nearest, // 使用最近的非透明像素颜色
+        Weighted, // 使用加权平均
+        Gaussian, // 使用高斯加权
     }
 
     public static class AlphaColorFixer
@@ -42,12 +42,13 @@ namespace TexCombineTool
             return Math.Max(0, 1 - distance / maxDistance);
         }
 
-        private static Rgba32 CalculateNearestColor(Sprite sprite, int x, int y, bool[,] processed, List<Rectangle> spriteRegions)
+        private static Rgba32 CalculateNearestColor(Sprite sprite, int x, int y, bool[,] processed,
+            List<Rectangle> spriteRegions)
         {
             var currentRegion = spriteRegions.FirstOrDefault(r =>
                 x >= r.X && x < r.X + r.Width && y >= r.Y && y < r.Y + r.Height);
 
-            if (currentRegion == default) return new Rgba32();
+            if (currentRegion == default) return new();
 
             foreach (var (ox, oy) in OffsetList)
             {
@@ -61,18 +62,19 @@ namespace TexCombineTool
                 var pixel = sprite[nx, ny];
                 if (!processed[nx, ny] && pixel.A == 0) continue;
 
-                return new Rgba32(pixel.R, pixel.G, pixel.B, 0);
+                return new(pixel.R, pixel.G, pixel.B, 0);
             }
 
-            return new Rgba32();
+            return new();
         }
 
-        private static Rgba32 CalculateWeightedColor(Sprite sprite, int x, int y, bool[,] processed, List<Rectangle> spriteRegions)
+        private static Rgba32 CalculateWeightedColor(Sprite sprite, int x, int y, bool[,] processed,
+            List<Rectangle> spriteRegions)
         {
             var currentRegion = spriteRegions.FirstOrDefault(r =>
                 x >= r.X && x < r.X + r.Width && y >= r.Y && y < r.Y + r.Height);
 
-            if (currentRegion == default) return new Rgba32();
+            if (currentRegion == default) return new();
 
             var totalWeight = 0f;
             var weightedR = 0f;
@@ -100,9 +102,9 @@ namespace TexCombineTool
                 weightedB += pixel.B * weight;
             }
 
-            if (totalWeight <= 0) return new Rgba32();
+            if (totalWeight <= 0) return new();
 
-            return new Rgba32(
+            return new(
                 (byte)(weightedR / totalWeight),
                 (byte)(weightedG / totalWeight),
                 (byte)(weightedB / totalWeight),
@@ -110,12 +112,13 @@ namespace TexCombineTool
             );
         }
 
-        private static Rgba32 CalculateGaussianColor(Sprite sprite, int x, int y, bool[,] processed, List<Rectangle> spriteRegions)
+        private static Rgba32 CalculateGaussianColor(Sprite sprite, int x, int y, bool[,] processed,
+            List<Rectangle> spriteRegions)
         {
             var currentRegion = spriteRegions.FirstOrDefault(r =>
                 x >= r.X && x < r.X + r.Width && y >= r.Y && y < r.Y + r.Height);
 
-            if (currentRegion == default) return new Rgba32();
+            if (currentRegion == default) return new();
 
             var totalWeight = 0f;
             var weightedR = 0f;
@@ -143,9 +146,9 @@ namespace TexCombineTool
                 weightedB += pixel.B * weight;
             }
 
-            if (totalWeight <= 0) return new Rgba32();
+            if (totalWeight <= 0) return new();
 
-            return new Rgba32(
+            return new(
                 (byte)(weightedR / totalWeight),
                 (byte)(weightedG / totalWeight),
                 (byte)(weightedB / totalWeight),
@@ -153,7 +156,8 @@ namespace TexCombineTool
             );
         }
 
-        public static (Sprite, Sprite) FixAlphaColor(Sprite sprite, List<Rectangle> spriteRegions, AlphaColorFixAlgorithm algorithm)
+        public static (Sprite, Sprite) FixAlphaColor(Sprite sprite, List<Rectangle> spriteRegions,
+            AlphaColorFixAlgorithm algorithm)
         {
             var width = sprite.Width;
             var height = sprite.Height;
@@ -161,37 +165,32 @@ namespace TexCombineTool
 
             var colorMap = new Sprite(width, height);
             for (var y = 0; y < height; y++)
-                for (var x = 0; x < width; x++)
-                {
-                    var pixel = sprite[x, y];
-                    colorMap[x, y] = new Rgba32(pixel.R, pixel.G, pixel.B, 255);
-                }
-
-            if (algorithm == AlphaColorFixAlgorithm.None)
+            for (var x = 0; x < width; x++)
             {
-                return (sprite, colorMap);
+                var pixel = sprite[x, y];
+                colorMap[x, y] = new(pixel.R, pixel.G, pixel.B, 255);
             }
+
+            if (algorithm == AlphaColorFixAlgorithm.None) return (sprite, colorMap);
 
             var processed = new bool[width, height];
             var regionLocks = new Dictionary<Rectangle, object>();
             foreach (var region in spriteRegions)
-                regionLocks[region] = new object();
+                regionLocks[region] = new();
 
             Parallel.ForEach(spriteRegions, region =>
             {
                 for (var y = region.Y; y < region.Y + region.Height; y++)
-                    for (var x = region.X; x < region.X + region.Width; x++)
+                for (var x = region.X; x < region.X + region.Width; x++)
+                {
+                    if (x < 0 || x >= width || y < 0 || y >= height) continue;
+                    var pixel = sprite[x, y];
+                    if (pixel.A <= 0) continue;
+                    lock (regionLocks[region])
                     {
-                        if (x < 0 || x >= width || y < 0 || y >= height) continue;
-                        var pixel = sprite[x, y];
-                        if (pixel.A > 0)
-                        {
-                            lock (regionLocks[region])
-                            {
-                                processed[x, y] = true;
-                            }
-                        }
+                        processed[x, y] = true;
                     }
+                }
             });
 
             Parallel.ForEach(spriteRegions, region =>
@@ -203,21 +202,21 @@ namespace TexCombineTool
                     var pixelsToProcess = new List<(int x, int y)>();
 
                     for (var y = region.Y; y < region.Y + region.Height; y++)
-                        for (var x = region.X; x < region.X + region.Width; x++)
-                        {
-                            if (x < 0 || x >= width || y < 0 || y >= height) continue;
-                            if (processed[x, y]) continue;
+                    for (var x = region.X; x < region.X + region.Width; x++)
+                    {
+                        if (x < 0 || x >= width || y < 0 || y >= height) continue;
+                        if (processed[x, y]) continue;
 
-                            var pixel = sprite[x, y];
-                            if (pixel.A > 0) continue;
+                        var pixel = sprite[x, y];
+                        if (pixel.A > 0) continue;
 
-                            var count = GetNotTransparentNeighborsPixelColor(sprite, x, y, processed, out var colors, spriteRegions);
-                            if (count <= 0) continue;
+                        var count = GetNotTransparentNeighborsPixelColor(sprite, x, y, processed, spriteRegions);
+                        if (count <= 0) continue;
 
-                            pixelsToProcess.Add((x, y));
-                        }
+                        pixelsToProcess.Add((x, y));
+                    }
 
-                    if (pixelsToProcess.Count > 0)
+                    if (pixelsToProcess.Count <= 0) continue;
                     {
                         lock (regionLocks[region])
                         {
@@ -227,14 +226,17 @@ namespace TexCombineTool
 
                                 var color = algorithm switch
                                 {
-                                    AlphaColorFixAlgorithm.Nearest => CalculateNearestColor(sprite, x, y, processed, spriteRegions),
-                                    AlphaColorFixAlgorithm.Weighted => CalculateWeightedColor(sprite, x, y, processed, spriteRegions),
-                                    AlphaColorFixAlgorithm.Gaussian => CalculateGaussianColor(sprite, x, y, processed, spriteRegions),
-                                    _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, null)
+                                    AlphaColorFixAlgorithm.Nearest => CalculateNearestColor(sprite, x, y, processed,
+                                        spriteRegions),
+                                    AlphaColorFixAlgorithm.Weighted => CalculateWeightedColor(sprite, x, y, processed,
+                                        spriteRegions),
+                                    AlphaColorFixAlgorithm.Gaussian => CalculateGaussianColor(sprite, x, y, processed,
+                                        spriteRegions),
+                                    _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, null),
                                 };
 
                                 sprite[x, y] = color;
-                                colorMap[x, y] = new Rgba32(color.R, color.G, color.B, 255);
+                                colorMap[x, y] = new(color.R, color.G, color.B, 255);
                                 processed[x, y] = true;
                                 changed = true;
                             }
@@ -247,9 +249,8 @@ namespace TexCombineTool
         }
 
         private static int GetNotTransparentNeighborsPixelColor(Sprite sprite, int x, int y, bool[,] processed,
-            out Rgba32[] result, List<Rectangle> spriteRegions)
+            List<Rectangle> spriteRegions)
         {
-            result = new Rgba32[8];
             var count = 0;
             if (x < 0 || x >= sprite.Width || y < 0 || y >= sprite.Height) return 0;
 
@@ -269,7 +270,6 @@ namespace TexCombineTool
 
                 var pixel = sprite[nx, ny];
                 if (!processed[nx, ny] && pixel.A == 0) continue;
-                result[count] = pixel;
                 count++;
             }
 
