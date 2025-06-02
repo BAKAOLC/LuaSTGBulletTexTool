@@ -243,8 +243,12 @@ static async Task<(Sprite, Sprite, List<SpriteData>)> CombineSprites(string name
         var centerData = FixCenterData(originalSpriteData, cropRange ?? new());
         resultSpriteData.Add(new(spriteName, name, rectData, centerData, originalSpriteData.Scaling,
             originalSpriteData.Blend));
-        resultSpriteData.AddRange(sameSpriteNames.Select(sName => new SpriteData(sName, name,
-            rectData, centerData, originalSpriteData.Scaling, originalSpriteData.Blend)));
+        resultSpriteData.AddRange(sameSpriteNames.Select(sName => 
+        {
+            var sameSpriteData = spriteDataMap[sName];
+            return new SpriteData(sName, name, rectData, centerData, 
+                sameSpriteData.Scaling, sameSpriteData.Blend);
+        }));
 
         tasks.Add(Task.Run(() => resultSprite.Mutate(ctx => ctx.DrawImage(sprite, point, 1f))));
         x += sprite.Width + margin * 2;
@@ -269,15 +273,7 @@ static Dictionary<string, SpriteData> MapSpriteData(List<SpriteData> spriteDataL
     {
         var textureName = spriteData.Texture;
         var spriteName = spriteData.Name;
-        if (!sameSpritePool.TryGetValue(textureName, out var sameSprites))
-        {
-            spriteDataMap[spriteName] = spriteData;
-            continue;
-        }
-
-        var mainSpriteName = sameSprites.Values.FirstOrDefault(x => x.Contains(spriteName))?.FirstOrDefault() ??
-                             spriteName;
-        spriteDataMap[mainSpriteName] = spriteData;
+        spriteDataMap[spriteName] = spriteData;
     }
 
     return spriteDataMap;
