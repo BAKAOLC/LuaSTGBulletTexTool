@@ -5,7 +5,7 @@ namespace TexCombineTool
 {
     using Sprite = Image<Rgba32>;
 
-    public enum AlphaColorFixAlgorithm
+    internal enum AlphaColorFixAlgorithm
     {
         None, // 不处理透明像素
         Nearest, // 使用最近的非透明像素颜色
@@ -13,7 +13,7 @@ namespace TexCombineTool
         Gaussian, // 使用高斯加权
     }
 
-    public static class AlphaColorFixer
+    internal static class AlphaColorFixer
     {
         private static readonly (int, int)[] OffsetList =
         [
