@@ -1,22 +1,26 @@
-using Newtonsoft.Json;
+using System.Text.Json.Serialization;
 
 namespace TexCombineTool.Models
 {
     internal record CenterData(
-        [property: JsonProperty("x")] double X,
-        [property: JsonProperty("y")] double Y);
+        [property: JsonPropertyName("x")] double X,
+        [property: JsonPropertyName("y")] double Y);
 
     internal record SpriteData(
-        [property: JsonProperty("name")] string Name,
-        [property: JsonProperty("texture")] string Texture,
-        [property: JsonProperty("rect")] RectData Rect,
-        [property: JsonProperty("center")] CenterData? Center,
-        [property: JsonProperty("scaling")] double? Scaling,
-        [property: JsonProperty("blend")] string? Blend);
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("texture")]
+        string Texture,
+        [property: JsonPropertyName("rect")] RectData Rect,
+        [property: JsonPropertyName("center")] CenterData? Center,
+        [property: JsonPropertyName("scaling")]
+        double? Scaling,
+        [property: JsonPropertyName("blend")] string? Blend);
 
     internal record SpriteSequenceData(
-        [property: JsonProperty("name")] string Name,
-        [property: JsonProperty("sprites")] List<string> Sprites,
-        [property: JsonProperty("interval")] int Interval,
-        [property: JsonProperty("blend")] string? Blend);
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("sprites")]
+        List<string> Sprites,
+        [property: JsonPropertyName("interval")]
+        int Interval,
+        [property: JsonPropertyName("blend")] string? Blend);
 }

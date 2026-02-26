@@ -1,4 +1,4 @@
-using Newtonsoft.Json;
+using System.Text.Json;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using TexCombineTool.Models;
@@ -12,7 +12,7 @@ namespace TexCombineTool.Helpers
         public static BulletData? LoadBulletData(string jsonFilePath)
         {
             var jsonContent = File.ReadAllText(jsonFilePath);
-            var bulletData = JsonConvert.DeserializeObject<BulletData>(jsonContent);
+            var bulletData = JsonSerializer.Deserialize(jsonContent, BulletDataJsonContext.Default.BulletData);
             if (bulletData != null) return bulletData;
             Console.WriteLine("Failed to deserialize JSON content.");
             return null;
@@ -20,13 +20,7 @@ namespace TexCombineTool.Helpers
 
         public static void SaveBulletData(BulletData bulletData, string outputPath)
         {
-            var jsonSerializeOptions = new JsonSerializerSettings
-            {
-                Formatting = Formatting.Indented,
-                NullValueHandling = NullValueHandling.Ignore,
-                DefaultValueHandling = DefaultValueHandling.Ignore,
-            };
-            var resultJson = JsonConvert.SerializeObject(bulletData, jsonSerializeOptions);
+            var resultJson = JsonSerializer.Serialize(bulletData, BulletDataJsonContext.Default.BulletData);
             File.WriteAllText(outputPath, resultJson);
             Console.WriteLine($"Generated JSON file: {outputPath}");
         }

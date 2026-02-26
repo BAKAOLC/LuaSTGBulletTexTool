@@ -1,13 +1,13 @@
-using Newtonsoft.Json;
+using System.Text.Json.Serialization;
 using SixLabors.ImageSharp;
 
 namespace TexCombineTool.Models
 {
     internal record RectData(
-        [property: JsonProperty("x")] int X,
-        [property: JsonProperty("y")] int Y,
-        [property: JsonProperty("width")] int Width,
-        [property: JsonProperty("height")] int Height);
+        [property: JsonPropertyName("x")] int X,
+        [property: JsonPropertyName("y")] int Y,
+        [property: JsonPropertyName("width")] int Width,
+        [property: JsonPropertyName("height")] int Height);
 
     internal static class RectExtensions
     {
