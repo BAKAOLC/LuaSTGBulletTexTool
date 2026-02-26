@@ -10,6 +10,43 @@ namespace TexCombineTool.Layout
             int maxHeight,
             int margin)
         {
+            var methods = new[]
+            {
+                FreeRectChoiceHeuristic.BestShortSideFit,
+                FreeRectChoiceHeuristic.BestLongSideFit,
+                FreeRectChoiceHeuristic.BestAreaFit,
+                FreeRectChoiceHeuristic.BottomLeftRule,
+            };
+
+            List<(string, Rectangle)>? bestResult = null;
+            var bestCount = 0;
+            var bestOccupancy = 0.0;
+            FreeRectChoiceHeuristic? bestMethod = null;
+
+            foreach (var method in methods)
+            {
+                var result = TryLayout(sprites, maxWidth, maxHeight, margin, method);
+                var occupancy = CalculateOccupancy(result, maxWidth, maxHeight);
+
+                if (result.Count <= bestCount && (result.Count != bestCount || !(occupancy > bestOccupancy))) continue;
+                bestResult = result;
+                bestCount = result.Count;
+                bestOccupancy = occupancy;
+                bestMethod = method;
+            }
+
+            Console.WriteLine(
+                $"MaxRects layout completed using {bestMethod}: {bestCount}/{sprites.Count} sprites placed, occupancy: {bestOccupancy:P2}");
+            return bestResult ?? [];
+        }
+
+        private static List<(string name, Rectangle rect)> TryLayout(
+            Dictionary<string, Size> sprites,
+            int maxWidth,
+            int maxHeight,
+            int margin,
+            FreeRectChoiceHeuristic method)
+        {
             var result = new List<(string, Rectangle)>();
             var packer = new MaxRectsPacker(maxWidth, maxHeight);
 
@@ -23,13 +60,10 @@ namespace TexCombineTool.Layout
                 var paddedWidth = size.Width + margin * 2;
                 var paddedHeight = size.Height + margin * 2;
 
-                var rect = packer.Insert(paddedWidth, paddedHeight, FreeRectChoiceHeuristic.BestShortSideFit);
+                var rect = packer.Insert(paddedWidth, paddedHeight, method);
 
                 if (rect == null)
-                {
-                    Console.WriteLine($"Not enough space for sprite: {name}");
                     continue;
-                }
 
                 var finalRect = new Rectangle(
                     rect.Value.X + margin,
@@ -40,8 +74,16 @@ namespace TexCombineTool.Layout
                 result.Add((name, finalRect));
             }
 
-            Console.WriteLine($"MaxRects layout completed: {result.Count}/{sprites.Count} sprites placed");
             return result;
+        }
+
+        private static double CalculateOccupancy(List<(string name, Rectangle rect)> layout, int width, int height)
+        {
+            if (layout.Count == 0) return 0;
+
+            var totalArea = layout.Sum(x => x.rect.Width * x.rect.Height);
+            var canvasArea = width * height;
+            return (double)totalArea / canvasArea;
         }
 
         private enum FreeRectChoiceHeuristic
@@ -184,11 +226,9 @@ namespace TexCombineTool.Layout
                         break;
                     }
 
-                    if (IsContainedIn(_freeRectangles[j], _freeRectangles[i]))
-                    {
-                        _freeRectangles.RemoveAt(j);
-                        --j;
-                    }
+                    if (!IsContainedIn(_freeRectangles[j], _freeRectangles[i])) continue;
+                    _freeRectangles.RemoveAt(j);
+                    --j;
                 }
             }
 
